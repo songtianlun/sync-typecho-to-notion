@@ -72,7 +72,6 @@ npm run dev -- --clear-cache
 |------|------|------|
 | Title | title | 文章标题 |
 | Slug | rich_text | 文章 slug（用于去重） |
-| Cid | number | Typecho 文章 ID |
 | Category | multi_select | 分类 |
 | Tags | multi_select | 标签 |
 | Status | select | 发布状态 |
