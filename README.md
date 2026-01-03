@@ -2,66 +2,70 @@
 
 将 Typecho 博客文章同步到 Notion 数据库的命令行工具。
 
-## 功能
+A CLI tool to sync Typecho blog posts to Notion database.
 
-- 从 Typecho PostgreSQL 数据库读取文章
-- 同步文章的标题、内容、分类、标签、发布状态到 Notion
-- 自动创建 Notion 数据库缺失的属性字段
-- 通过 slug 判断文章是否已存在，支持增量更新
-- 比较修改时间，跳过未变更的文章
-- 文章正文作为 Notion 页面内容（支持 Markdown 格式）
+## 功能 | Features
 
-## 安装
+- 从 Typecho PostgreSQL 数据库读取文章 | Read posts from Typecho PostgreSQL database
+- 同步标题、内容、分类、标签、发布状态到 Notion | Sync title, content, categories, tags, status to Notion
+- 自动创建 Notion 数据库缺失的属性字段 | Auto-create missing Notion database properties
+- 通过 slug 判断文章是否已存在，支持增量更新 | Incremental sync based on slug
+- 比较修改时间，跳过未变更的文章 | Skip unmodified posts by comparing modification time
+- 文章正文作为 Notion 页面内容（支持 Markdown） | Post content as Notion page body (Markdown supported)
+
+## 安装 | Installation
 
 ```bash
 npm install
 ```
 
-## 配置
+## 配置 | Configuration
 
 复制环境变量示例文件并编辑：
+
+Copy and edit the environment variables file:
 
 ```bash
 cp .env.example .env
 ```
 
-配置项说明：
+配置项说明 | Configuration options:
 
-| 变量 | 说明 |
-|------|------|
+| 变量 Variable | 说明 Description |
+|---------------|------------------|
 | `NOTION_KEY` | Notion Integration Token |
-| `NOTION_DATABASE_ID` | 目标 Notion 数据库 ID |
-| `TYPECHO_DB_ADAPTER` | 数据库类型（目前仅支持 `postgresql`） |
-| `TYPECHO_DB_HOST` | 数据库主机地址 |
-| `TYPECHO_DB_PORT` | 数据库端口 |
-| `TYPECHO_DB_USER` | 数据库用户名 |
-| `TYPECHO_DB_PASSWORD` | 数据库密码 |
-| `TYPECHO_DB_DATABASE` | 数据库名称 |
-| `TYPECHO_DB_PREFIX` | Typecho 表前缀（默认 `typecho_`） |
+| `NOTION_DATABASE_ID` | 目标 Notion 数据库 ID / Target Notion database ID |
+| `TYPECHO_DB_ADAPTER` | 数据库类型，目前仅支持 `postgresql` / Database type, only `postgresql` supported |
+| `TYPECHO_DB_HOST` | 数据库主机地址 / Database host |
+| `TYPECHO_DB_PORT` | 数据库端口 / Database port |
+| `TYPECHO_DB_USER` | 数据库用户名 / Database username |
+| `TYPECHO_DB_PASSWORD` | 数据库密码 / Database password |
+| `TYPECHO_DB_DATABASE` | 数据库名称 / Database name |
+| `TYPECHO_DB_PREFIX` | Typecho 表前缀，默认 `typecho_` / Table prefix, default `typecho_` |
 
-## 使用
+## 使用 | Usage
 
-### 本地运行
+### 本地运行 | Local
 
 ```bash
-# 开发模式运行
+# 开发模式运行 | Development mode
 npm run dev
 
-# 或编译后运行
+# 编译后运行 | Build and run
 npm run build
 npm start
 
-# 跳过缓存，强制从数据库获取
+# 跳过缓存 | Skip cache
 npm run dev -- --no-cache
 
-# 清除缓存
+# 清除缓存 | Clear cache
 npm run dev -- --clear-cache
 ```
 
-### Docker 运行
+### Docker
 
 ```bash
-# 使用环境变量运行
+# 使用环境变量运行 | Run with environment variables
 docker run --rm \
   -e NOTION_KEY="secret_xxx" \
   -e NOTION_DATABASE_ID="your_database_id" \
@@ -72,92 +76,49 @@ docker run --rm \
   -e TYPECHO_DB_DATABASE="typecho" \
   songtianlun/sync-typecho-to-notion
 
-# 或使用 env 文件运行
+# 使用 env 文件运行 | Run with env file
 docker run --rm --env-file .env songtianlun/sync-typecho-to-notion
 ```
 
-## 缓存
+## 缓存 | Cache
 
 为避免调试时频繁查询数据库，工具会将文章数据缓存到 `.cache/` 目录，默认有效期 1 小时。
 
-- 缓存有效时自动使用缓存数据
-- 使用 `--no-cache` 跳过缓存
-- 使用 `--clear-cache` 清除缓存
+To avoid frequent database queries during debugging, the tool caches post data in `.cache/` directory with 1-hour expiry.
 
-## Notion 数据库字段
+- 缓存有效时自动使用 | Auto-use when cache is valid
+- `--no-cache` 跳过缓存 | Skip cache
+- `--clear-cache` 清除缓存 | Clear cache
+
+## Notion 数据库字段 | Database Fields
 
 同步时会自动创建以下字段（如不存在）：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| Title | title | 文章标题 |
-| Slug | rich_text | 文章 slug（用于去重） |
-| Category | multi_select | 分类 |
-| Tags | multi_select | 标签 |
-| Status | select | 发布状态 |
-| Created | date | 创建时间 |
-| Modified | date | 修改时间 |
+The following fields will be auto-created if not exist:
 
-## 输出示例
+| 字段 Field | 类型 Type | 说明 Description |
+|------------|-----------|------------------|
+| Title | title | 文章标题 / Post title |
+| Slug | rich_text | 文章 slug，用于去重 / For deduplication |
+| Category | multi_select | 分类 / Categories |
+| Tags | multi_select | 标签 / Tags |
+| Status | select | 发布状态 / Publish status |
+| Created | date | 创建时间 / Creation time |
+| Modified | date | 修改时间 / Modification time |
 
-```
-==================================================
-Typecho to Notion Sync Tool
-==================================================
-
-Configuration loaded successfully:
-  - Notion Database ID: abc12345...
-  - Typecho DB: localhost:5432/typecho
-  - Table Prefix: typecho_
-
-Connected to Typecho database successfully.
-
-Fetching posts from Typecho...
-Found 42 posts in Typecho database.
-
-Checking Notion database properties...
-All required properties exist.
-
-Querying existing posts in Notion...
-Found 30 existing posts in Notion.
-
-Starting sync...
---------------------------------------------------
-[CREATE] "新文章标题" (slug: new-post)
-[UPDATE] "已更新文章" (slug: updated-post)
-[SKIP] "未修改文章" (slug: unchanged-post) - not modified
---------------------------------------------------
-
-==================================================
-Sync Summary
-==================================================
-Total posts:    42
-Created:        5
-Updated:        7
-Skipped:        30
-Failed:         0
-==================================================
-Sync completed!
-```
-
-## 开发者
-
-### 本地开发
+## 开发 | Development
 
 ```bash
-# 安装依赖
+# 安装依赖 | Install dependencies
 npm install
 
-# 开发模式运行
+# 开发模式 | Dev mode
 npm run dev
 
-# 编译
+# 编译 | Build
 npm run build
-```
 
-### 构建 Docker 镜像
-
-```bash
+# 构建 Docker 镜像 | Build Docker image
 docker build -t sync-typecho-to-notion .
 ```
 
