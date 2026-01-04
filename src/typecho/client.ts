@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { DatabaseConfig, TypechoPost, TypechoMeta } from '../types';
+import { DatabaseConfig, TypechoPost, TypechoMeta, TypechoLink } from '../types';
 
 export class TypechoClient {
   private pool: Pool;
@@ -94,6 +94,37 @@ export class TypechoClient {
     }
 
     return posts;
+  }
+
+  // 获取所有友链 (handsome 主题)
+  async getLinks(): Promise<TypechoLink[]> {
+    const linksTable = this.table('links');
+
+    const result = await this.pool.query<{
+      lid: number;
+      name: string;
+      url: string;
+      sort: string;
+      image: string;
+      description: string;
+      user: string;
+      order: number;
+    }>(`
+      SELECT lid, name, url, sort, image, description, "user", "order"
+      FROM ${linksTable}
+      ORDER BY "order" ASC
+    `);
+
+    return result.rows.map((row) => ({
+      lid: row.lid,
+      name: row.name || '',
+      url: row.url || '',
+      sort: row.sort || '',
+      image: row.image || '',
+      description: row.description || '',
+      user: row.user || '',
+      order: row.order || 0,
+    }));
   }
 
   // 清理文章内容（移除 Typecho 特殊标记）

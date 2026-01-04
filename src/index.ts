@@ -1,45 +1,28 @@
-import { validateConfig, notionConfig, typechoDbConfig } from './config';
+import { validateConfig, notionConfig, notionLinksConfig, typechoDbConfig } from './config';
 import { TypechoClient } from './typecho/client';
 import { NotionClient } from './notion/client';
+import { NotionLinksClient } from './notion/links-client';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 
 // 解析命令行参数
-function parseArgs(): { noCache: boolean; clearCache: boolean } {
+function parseArgs(): { noCache: boolean; clearCache: boolean; command: 'posts' | 'links' } {
   const args = process.argv.slice(2);
+  const command = args.includes('links') ? 'links' : 'posts';
+
   return {
     noCache: args.includes('--no-cache'),
     clearCache: args.includes('--clear-cache'),
+    command,
   };
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs();
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  console.log('='.repeat(50));
-  console.log('Typecho to Notion Sync Tool');
-  console.log('='.repeat(50));
-  console.log();
-
-  // 处理 --clear-cache
-  if (args.clearCache) {
-    clearCache();
-    if (process.argv.length === 3) {
-      return; // 只有 --clear-cache 参数时，清除后退出
-    }
-  }
-
-  // 验证配置
-  try {
-    validateConfig();
-  } catch (error) {
-    console.error('Configuration error:', (error as Error).message);
-    process.exit(1);
-  }
-
-  console.log();
-
-  // 初始化客户端
+// 同步文章
+async function syncPosts(noCache: boolean): Promise<void> {
   const typechoClient = new TypechoClient(typechoDbConfig);
   const notionClient = new NotionClient(notionConfig);
 
@@ -55,10 +38,9 @@ async function main(): Promise<void> {
   let posts: TypechoPost[] = [];
 
   try {
-    // 尝试从缓存获取文章
     console.log('\nFetching posts...');
 
-    if (!args.noCache) {
+    if (!noCache) {
       const cached = getCachedPosts();
       if (cached) {
         posts = cached;
@@ -67,14 +49,12 @@ async function main(): Promise<void> {
       console.log('Cache disabled (--no-cache)');
     }
 
-    // 如果没有缓存，从数据库获取
     if (posts.length === 0) {
       console.log('Connecting to Typecho database...');
       await typechoClient.connect();
       posts = await typechoClient.getPosts();
       await typechoClient.close();
 
-      // 保存到缓存
       if (posts.length > 0) {
         setCachedPosts(posts);
       }
@@ -89,18 +69,15 @@ async function main(): Promise<void> {
       return;
     }
 
-    // 确保 Notion 数据库属性存在
     console.log('Checking Notion database properties...');
     await notionClient.ensureDatabaseProperties();
     console.log();
 
-    // 获取已存在的文章
     console.log('Querying existing posts in Notion...');
     const existingPosts = await notionClient.queryExistingPosts();
     console.log(`Found ${Object.keys(existingPosts).length} existing posts in Notion.`);
     console.log();
 
-    // 开始同步
     console.log('Starting sync...');
     console.log('-'.repeat(50));
 
@@ -109,7 +86,6 @@ async function main(): Promise<void> {
         const existing = existingPosts[post.slug];
 
         if (existing) {
-          // 检查是否需要更新（比较修改时间）
           const postModified = new Date(post.modified * 1000).toISOString();
           if (existing.modified && existing.modified >= postModified) {
             console.log(`[SKIP] "${post.title}" (slug: ${post.slug}) - not modified`);
@@ -117,18 +93,15 @@ async function main(): Promise<void> {
             continue;
           }
 
-          // 更新已存在的文章
           console.log(`[UPDATE] "${post.title}" (slug: ${post.slug})`);
           await notionClient.updatePage(existing.pageId, post);
           result.updated++;
         } else {
-          // 创建新文章
           console.log(`[CREATE] "${post.title}" (slug: ${post.slug})`);
           await notionClient.createPage(post);
           result.created++;
         }
 
-        // 添加小延迟避免 API 限制
         await sleep(350);
       } catch (error) {
         const errorMessage = (error as Error).message;
@@ -148,10 +121,98 @@ async function main(): Promise<void> {
   }
 
   // 打印同步统计
+  printSummary(result, 'posts');
+}
+
+// 同步友链
+async function syncLinks(): Promise<void> {
+  if (!notionLinksConfig) {
+    console.error('Error: NOTION_LINKS_DATABASE_ID is not configured.');
+    console.error('Please set NOTION_LINKS_DATABASE_ID in your .env file.');
+    process.exit(1);
+  }
+
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const notionLinksClient = new NotionLinksClient(notionLinksConfig);
+
+  const result: SyncResult = {
+    total: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  try {
+    console.log('\nFetching links...');
+    console.log('Connecting to Typecho database...');
+    await typechoClient.connect();
+    const links = await typechoClient.getLinks();
+    await typechoClient.close();
+
+    result.total = links.length;
+    console.log(`Total: ${links.length} links`);
+    console.log();
+
+    if (links.length === 0) {
+      console.log('No links to sync.');
+      return;
+    }
+
+    console.log('Checking Notion database properties...');
+    await notionLinksClient.ensureDatabaseProperties();
+    console.log();
+
+    console.log('Querying existing links in Notion...');
+    const existingLinks = await notionLinksClient.queryExistingLinks();
+    console.log(`Found ${Object.keys(existingLinks).length} existing links in Notion.`);
+    console.log();
+
+    console.log('Starting sync...');
+    console.log('-'.repeat(50));
+
+    for (const link of links) {
+      try {
+        const existing = existingLinks[link.url];
+
+        if (existing) {
+          console.log(`[UPDATE] "${link.name}" (url: ${link.url})`);
+          await notionLinksClient.updatePage(existing.pageId, link);
+          result.updated++;
+        } else {
+          console.log(`[CREATE] "${link.name}" (url: ${link.url})`);
+          await notionLinksClient.createPage(link);
+          result.created++;
+        }
+
+        await sleep(350);
+      } catch (error) {
+        const errorMessage = (error as Error).message;
+        console.error(`[FAILED] "${link.name}" - ${errorMessage}`);
+        result.failed++;
+        result.errors.push({ title: link.name, error: errorMessage });
+      }
+    }
+
+    console.log('-'.repeat(50));
+    console.log();
+
+  } catch (error) {
+    console.error('Sync error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  printSummary(result, 'links');
+}
+
+// 打印同步统计
+function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
   console.log('Sync Summary');
   console.log('='.repeat(50));
-  console.log(`Total posts:    ${result.total}`);
+  console.log(`Total ${type}:   ${result.total}`);
   console.log(`Created:        ${result.created}`);
   console.log(`Updated:        ${result.updated}`);
   console.log(`Skipped:        ${result.skipped}`);
@@ -169,8 +230,35 @@ async function main(): Promise<void> {
   console.log('Sync completed!');
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function main(): Promise<void> {
+  const args = parseArgs();
+
+  console.log('='.repeat(50));
+  console.log('Typecho to Notion Sync Tool');
+  console.log('='.repeat(50));
+  console.log();
+
+  if (args.clearCache) {
+    clearCache();
+    if (process.argv.length === 3) {
+      return;
+    }
+  }
+
+  try {
+    validateConfig();
+  } catch (error) {
+    console.error('Configuration error:', (error as Error).message);
+    process.exit(1);
+  }
+
+  console.log();
+
+  if (args.command === 'links') {
+    await syncLinks();
+  } else {
+    await syncPosts(args.noCache);
+  }
 }
 
 // 运行主程序

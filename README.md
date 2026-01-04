@@ -94,6 +94,44 @@ To avoid frequent database queries during debugging, the tool caches post data i
 - `--no-cache` 跳过缓存 | Skip cache
 - `--clear-cache` 清除缓存 | Clear cache
 
+## 高级功能 | Advanced Features
+
+### 友链同步 | Links Sync (Handsome Theme)
+
+支持同步 Handsome 主题的友链数据到 Notion 数据库。
+
+Sync Handsome theme's links to a separate Notion database.
+
+**配置 | Configuration:**
+
+在 `.env` 中添加友链数据库 ID：
+
+Add links database ID in `.env`:
+
+```env
+NOTION_LINKS_DATABASE_ID=your_links_database_id
+```
+
+**使用 | Usage:**
+
+```bash
+# 本地运行 | Local
+npm run dev -- links
+
+# Docker
+docker run --rm --env-file .env songtianlun/sync-typecho-to-notion links
+```
+
+**友链数据库字段 | Links Database Fields:**
+
+| 字段 Field | 类型 Type | 说明 Description |
+|------------|-----------|------------------|
+| Name | title | 友链名称 / Link name |
+| URL | url | 链接地址，用于去重 / Link URL, for deduplication |
+| Sort | select | 分类 / Category |
+| Image | files | Logo 图片 / Logo image |
+| Description | rich_text | 简介 / Description |
+
 ## Notion 数据库字段 | Database Fields
 
 同步时会自动创建以下字段（如不存在）：

@@ -22,6 +22,14 @@ export const notionConfig: NotionConfig = {
   databaseId: getEnvOrThrow('NOTION_DATABASE_ID'),
 };
 
+// Notion 友链数据库配置（可选）
+export const notionLinksConfig: NotionConfig | null = process.env.NOTION_LINKS_DATABASE_ID
+  ? {
+      apiKey: getEnvOrThrow('NOTION_KEY'),
+      databaseId: process.env.NOTION_LINKS_DATABASE_ID,
+    }
+  : null;
+
 // Typecho 数据库配置
 export const typechoDbConfig: DatabaseConfig = {
   host: getEnvOrThrow('TYPECHO_DB_HOST'),
