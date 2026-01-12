@@ -39,6 +39,7 @@ const REQUIRED_PROPERTIES = {
   },
   Created: { date: {} },
   Modified: { date: {} },
+  UpdateDate: { last_edited_time: {} },
 };
 
 export class NotionClient {
@@ -108,12 +109,15 @@ export class NotionClient {
             const richTextArray = slugProp.rich_text as Array<{ plain_text: string }>;
             if (richTextArray.length > 0) {
               const slug = richTextArray[0].plain_text;
-              const modifiedProp = page.properties['Modified'];
-              let modified: string | undefined;
-              if (modifiedProp && modifiedProp.type === 'date' && modifiedProp.date) {
-                modified = modifiedProp.date.start;
+              const updateDateProp = page.properties['UpdateDate'];
+              let updateDate: string | undefined;
+              if (updateDateProp && updateDateProp.type === 'last_edited_time') {
+                const lastEditedTime = updateDateProp.last_edited_time;
+                if (typeof lastEditedTime === 'string') {
+                  updateDate = lastEditedTime;
+                }
               }
-              pageMap[slug] = { pageId: page.id, modified };
+              pageMap[slug] = { pageId: page.id, modified: updateDate };
             }
           }
         }

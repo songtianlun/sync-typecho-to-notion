@@ -90,13 +90,17 @@ async function syncPosts(noCache: boolean): Promise<void> {
         const existing = existingPosts[post.slug];
 
         if (existing) {
+          // 比较 PG 的 modified 和 Notion 的 UpdateDate
           const postModified = new Date(post.modified * 1000).toISOString();
-          if (existing.modified && existing.modified >= postModified) {
-            console.log(`${progress} [SKIP] "${post.title}" (slug: ${post.slug})`);
+
+          if (existing.modified && postModified <= existing.modified) {
+            // PG 的修改时间不比 Notion 更新，跳过
+            console.log(`${progress} [SKIP] "${post.title}" (slug: ${post.slug}) - No update needed`);
             result.skipped++;
             continue;
           }
 
+          // PG 的修改时间更新，执行更新
           console.log(`${progress} [UPDATE] "${post.title}" (slug: ${post.slug})`);
           await notionClient.updatePage(existing.pageId, post);
           result.updated++;
