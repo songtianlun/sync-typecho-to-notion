@@ -239,6 +239,46 @@ export class NotionClient {
     return item;
   }
 
+  // 验证并清理 URL
+  private sanitizeUrl(url: string): string | null {
+    if (!url || !url.trim()) {
+      return null;
+    }
+
+    // 解码 HTML 实体
+    let sanitized = url
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .trim();
+
+    // 跳过空 URL、纯锚点、相对路径
+    if (!sanitized || sanitized.startsWith('#') || sanitized.startsWith('/')) {
+      return null;
+    }
+
+    // 验证是否是有效的 URL 格式
+    try {
+      // 如果不是完整 URL，尝试添加协议
+      if (!sanitized.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/)) {
+        // 可能是省略协议的 URL，如 "example.com"
+        if (sanitized.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}/)) {
+          sanitized = 'https://' + sanitized;
+        } else {
+          return null;
+        }
+      }
+
+      // 验证 URL 格式
+      new URL(sanitized);
+      return sanitized;
+    } catch {
+      return null;
+    }
+  }
+
   // 解析文本中的 Markdown 格式（加粗、斜体、删除线、内联代码、链接），返回 Notion rich_text 数组
   private parseRichText(
     text: string
@@ -276,23 +316,46 @@ export class NotionClient {
       } else if (match[2] !== undefined && match[3] !== undefined) {
         // [text](url) 格式链接
         const linkText = match[2] || match[3];
-        const linkUrl = match[3];
+        const rawUrl = match[3];
+        const sanitizedUrl = this.sanitizeUrl(rawUrl);
+
         // 递归解析链接文本中的格式（如加粗）
         const parsedLinkText = this.parseInlineFormat(linkText);
-        for (const item of parsedLinkText) {
-          result.push(
-            this.createRichTextItem(item.content, {
-              link: { url: linkUrl },
-              bold: item.bold,
-              italic: item.italic,
-              strikethrough: item.strikethrough,
-              code: item.code,
-            })
-          );
+
+        // 如果 URL 无效，转换为普通文本而不是链接
+        if (sanitizedUrl) {
+          for (const item of parsedLinkText) {
+            result.push(
+              this.createRichTextItem(item.content, {
+                link: { url: sanitizedUrl },
+                bold: item.bold,
+                italic: item.italic,
+                strikethrough: item.strikethrough,
+                code: item.code,
+              })
+            );
+          }
+        } else {
+          // URL 无效，作为普通文本处理
+          for (const item of parsedLinkText) {
+            result.push(
+              this.createRichTextItem(item.content, {
+                bold: item.bold,
+                italic: item.italic,
+                strikethrough: item.strikethrough,
+                code: item.code,
+              })
+            );
+          }
         }
       } else if (match[4] !== undefined) {
         // <url> 自动链接格式
-        result.push(this.createRichTextItem(match[4], { link: { url: match[4] } }));
+        const sanitizedUrl = this.sanitizeUrl(match[4]);
+        if (sanitizedUrl) {
+          result.push(this.createRichTextItem(match[4], { link: { url: sanitizedUrl } }));
+        } else {
+          result.push(this.createRichTextItem(match[4]));
+        }
       } else if (match[5] !== undefined) {
         // **text** 加粗
         const parsedContent = this.parseInlineFormat(match[5], { bold: true });
