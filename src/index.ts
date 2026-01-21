@@ -1,20 +1,40 @@
-import { validateConfig, notionConfig, notionLinksConfig, typechoDbConfig } from './config';
+import { validateConfig, validateExportConfig, notionConfig, notionLinksConfig, typechoDbConfig, markdownExportDir } from './config';
 import { TypechoClient } from './typecho/client';
 import { NotionClient } from './notion/client';
 import { NotionLinksClient } from './notion/links-client';
+import { MarkdownExporter } from './markdown/exporter';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 
 // 解析命令行参数
-function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; command: 'posts' | 'links' } {
+function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; command: 'posts' | 'links' | 'markdown'; outputDir?: string } {
   const args = process.argv.slice(2);
-  const command = args.includes('links') ? 'links' : 'posts';
+  let command: 'posts' | 'links' | 'markdown' = 'posts';
+  let outputDir: string | undefined;
+
+  if (args.includes('links')) {
+    command = 'links';
+  } else if (args.includes('markdown') || args.includes('export')) {
+    command = 'markdown';
+  }
+
+  // 解析 --output-dir 或 -o 参数
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--output-dir' || args[i] === '-o') {
+      outputDir = args[i + 1];
+      break;
+    } else if (args[i].startsWith('--output-dir=')) {
+      outputDir = args[i].split('=')[1];
+      break;
+    }
+  }
 
   return {
     noCache: args.includes('--no-cache'),
     clearCache: args.includes('--clear-cache'),
     skipImageValidation: args.includes('--skip-image-validation'),
     command,
+    outputDir,
   };
 }
 
@@ -220,6 +240,100 @@ async function syncLinks(): Promise<void> {
   printSummary(result, 'links');
 }
 
+// 导出到 Markdown
+async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const exportDir = outputDir || markdownExportDir;
+  const markdownExporter = new MarkdownExporter(exportDir);
+
+  console.log(`Export directory: ${exportDir}`);
+  console.log();
+
+  const result: SyncResult = {
+    total: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  let posts: TypechoPost[] = [];
+
+  try {
+    console.log('\nFetching posts...');
+
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) {
+        posts = cached;
+      }
+    } else {
+      console.log('Cache disabled (--no-cache)');
+    }
+
+    if (posts.length === 0) {
+      console.log('Connecting to Typecho database...');
+      await typechoClient.connect();
+      posts = await typechoClient.getPosts();
+      await typechoClient.close();
+
+      if (posts.length > 0) {
+        setCachedPosts(posts);
+      }
+    }
+
+    result.total = posts.length;
+    console.log(`Total: ${posts.length} posts`);
+    console.log();
+
+    if (posts.length === 0) {
+      console.log('No posts to export.');
+      return;
+    }
+
+    console.log('Starting export to Markdown...');
+    console.log('-'.repeat(50));
+
+    let currentIndex = 0;
+    for (const post of posts) {
+      currentIndex++;
+      const progress = `[${currentIndex}/${posts.length}]`;
+
+      try {
+        const { action, filename } = await markdownExporter.exportPost(post);
+
+        if (action === 'created') {
+          console.log(`${progress} [CREATE] "${post.title}" -> ${filename}`);
+          result.created++;
+        } else if (action === 'updated') {
+          console.log(`${progress} [UPDATE] "${post.title}" -> ${filename}`);
+          result.updated++;
+        } else {
+          console.log(`${progress} [SKIP] "${post.title}" -> ${filename} - No update needed`);
+          result.skipped++;
+        }
+      } catch (error) {
+        const errorMessage = (error as Error).message;
+        console.error(`${progress} [FAILED] "${post.title}" - ${errorMessage}`);
+        result.failed++;
+        result.errors.push({ title: post.title, error: errorMessage });
+      }
+    }
+
+    console.log('-'.repeat(50));
+    console.log();
+
+  } catch (error) {
+    console.error('Export error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  // 打印导出统计
+  printSummary(result, 'files');
+}
+
 // 打印同步统计
 function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
@@ -269,6 +383,14 @@ async function main(): Promise<void> {
 
   if (args.command === 'links') {
     await syncLinks();
+  } else if (args.command === 'markdown') {
+    try {
+      validateExportConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await exportToMarkdown(args.noCache, args.outputDir);
   } else {
     await syncPosts(args.noCache, args.skipImageValidation);
   }

@@ -43,6 +43,9 @@ export const typechoDbConfig: DatabaseConfig = {
 // 数据库适配器（目前仅支持 postgresql）
 export const dbAdapter = getEnvOrDefault('TYPECHO_DB_ADAPTER', 'postgresql');
 
+// Markdown 导出目录配置
+export const markdownExportDir = getEnvOrDefault('MARKDOWN_EXPORT_DIR', './posts');
+
 // 验证配置
 export function validateConfig(): void {
   if (dbAdapter !== 'postgresql') {
@@ -51,6 +54,14 @@ export function validateConfig(): void {
 
   console.log('Configuration loaded successfully:');
   console.log(`  - Notion Database ID: ${notionConfig.databaseId.substring(0, 8)}...`);
+  console.log(`  - Typecho DB: ${typechoDbConfig.host}:${typechoDbConfig.port}/${typechoDbConfig.database}`);
+  console.log(`  - Table Prefix: ${typechoDbConfig.prefix}`);
+}
+
+// 验证导出配置
+export function validateExportConfig(): void {
+  console.log('Configuration loaded successfully:');
+  console.log(`  - Markdown Export Dir: ${markdownExportDir}`);
   console.log(`  - Typecho DB: ${typechoDbConfig.host}:${typechoDbConfig.port}/${typechoDbConfig.database}`);
   console.log(`  - Table Prefix: ${typechoDbConfig.prefix}`);
 }
