@@ -9,6 +9,7 @@ A CLI tool to sync Typecho blog posts to Notion database or export as Markdown f
 - 从 Typecho PostgreSQL 数据库读取文章 | Read posts from Typecho PostgreSQL database
 - 同步标题、内容、分类、标签、发布状态到 Notion | Sync title, content, categories, tags, status to Notion
 - **导出文章为 Markdown 文件（带 frontmatter）| Export posts as Markdown files with frontmatter**
+- **检查并移除失效的图片链接（可选）| Check and remove broken image links (optional)**
 - 自动创建 Notion 数据库缺失的属性字段 | Auto-create missing Notion database properties
 - 通过 slug 判断文章是否已存在，支持增量更新 | Incremental sync based on slug
 - 比较修改时间，跳过未变更的文章 | Skip unmodified posts by comparing modification time
@@ -69,6 +70,9 @@ npm run dev -- --no-cache
 
 # 清除缓存 | Clear cache
 npm run dev -- --clear-cache
+
+# 检查图片链接（移除失效图片）| Check image links (remove broken images)
+npm run dev -- --check-image-links
 ```
 
 ### 导出为 Markdown | Export as Markdown
@@ -111,6 +115,12 @@ npm run dev -- markdown --no-cache
 
 # 组合使用 | Combined usage
 npm run dev -- markdown -o ./blog/posts --no-cache
+
+# 启用图片链接检查 | Enable image link checking
+npm run dev -- markdown --check-image-links
+
+# 完整示例 | Full example
+npm run dev -- markdown -o ./posts --check-image-links --no-cache
 ```
 
 **特性 | Features:**
@@ -120,6 +130,30 @@ npm run dev -- markdown -o ./blog/posts --no-cache
 - ✅ 包含完整 frontmatter 元数据 | Include complete frontmatter metadata
 - ✅ 比较修改时间，智能更新 | Compare modification time, smart update
 - ✅ 跳过未变更的文章 | Skip unmodified posts
+- ✅ 可选图片链接检查 | Optional image link validation
+
+### 图片链接检查 | Image Link Checking
+
+使用 `--check-image-links` 参数启用图片链接检查功能。启用后，工具会检查文章中所有 `![](url)` 格式的图片链接，如果图片 URL 无法响应 200 状态码，将自动移除该图片语法。
+
+Use `--check-image-links` parameter to enable image link checking. When enabled, the tool checks all `![](url)` image links in posts. If an image URL doesn't respond with 200 status code, the image syntax will be automatically removed.
+
+**使用场景 | Use Cases:**
+- 清理旧文章中失效的图片链接 | Clean broken image links in old posts
+- 避免同步失效内容到 Notion | Avoid syncing broken content to Notion
+- 保持导出的 Markdown 文件整洁 | Keep exported Markdown files clean
+
+**性能优化 | Performance:**
+- 超时时间：30 秒 | Timeout: 30 seconds
+- 并发检查：最多同时检查 10 个图片 | Concurrent checks: up to 10 images at once
+- 重定向支持：自动跟随 HTTP 重定向（301, 302, 307, 308），最多 3 次 | Redirect support: auto-follow HTTP redirects (301, 302, 307, 308), up to 3 times
+- 大幅提升检查速度 | Significantly improved check speed
+
+**注意 | Note:**
+- 该功能默认关闭，需要显式启用 | This feature is disabled by default, must be explicitly enabled
+- 并发检查加快处理速度，建议配合缓存使用 | Concurrent checking speeds up processing, recommend using with cache
+- 自动跟随重定向，避免误判 301/302 为失效链接 | Auto-follow redirects to avoid false positives on 301/302
+- 仅检查图片 URL 是否返回 200，不验证图片内容 | Only checks if URL returns 200, doesn't validate image content
 
 ### 本地运行 | Local
 
@@ -220,20 +254,22 @@ docker run --rm --env-file .env songtianlun/sync-typecho-to-notion links
 
 ```bash
 # 同步文章到 Notion | Sync posts to Notion
-npm run dev                         # 默认命令 / Default command
-npm run dev -- --no-cache          # 跳过缓存 / Skip cache
-npm run dev -- --clear-cache       # 清除缓存 / Clear cache
+npm run dev                                  # 默认命令 / Default command
+npm run dev -- --no-cache                   # 跳过缓存 / Skip cache
+npm run dev -- --clear-cache                # 清除缓存 / Clear cache
+npm run dev -- --check-image-links          # 检查并移除失效图片 / Check and remove broken images
 
 # 同步友链到 Notion | Sync links to Notion
 npm run dev -- links
 
 # 导出文章为 Markdown | Export posts as Markdown
-npm run dev -- markdown                          # 导出到默认目录 ./posts / Export to default ./posts
-npm run dev -- export                            # 同上 / Same as above
-npm run dev -- markdown -o ./my-posts            # 指定导出目录 / Specify directory
+npm run dev -- markdown                                    # 导出到默认目录 ./posts / Export to default ./posts
+npm run dev -- export                                      # 同上 / Same as above
+npm run dev -- markdown -o ./my-posts                      # 指定导出目录 / Specify directory
 npm run dev -- markdown --output-dir=/path/to/export
-npm run dev -- markdown --no-cache               # 跳过缓存 / Skip cache
-npm run dev -- markdown -o ./blog --no-cache     # 组合使用 / Combined
+npm run dev -- markdown --no-cache                         # 跳过缓存 / Skip cache
+npm run dev -- markdown --check-image-links                # 检查并移除失效图片 / Check and remove broken images
+npm run dev -- markdown -o ./blog --check-image-links      # 组合使用 / Combined
 ```
 
 ## Notion 数据库字段 | Database Fields

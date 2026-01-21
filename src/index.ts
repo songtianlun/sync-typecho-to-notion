@@ -5,9 +5,10 @@ import { NotionLinksClient } from './notion/links-client';
 import { MarkdownExporter } from './markdown/exporter';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
+import { cleanBrokenImageLinks } from './utils/image-checker';
 
 // 解析命令行参数
-function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; command: 'posts' | 'links' | 'markdown'; outputDir?: string } {
+function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; checkImageLinks: boolean; command: 'posts' | 'links' | 'markdown'; outputDir?: string } {
   const args = process.argv.slice(2);
   let command: 'posts' | 'links' | 'markdown' = 'posts';
   let outputDir: string | undefined;
@@ -33,6 +34,7 @@ function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidati
     noCache: args.includes('--no-cache'),
     clearCache: args.includes('--clear-cache'),
     skipImageValidation: args.includes('--skip-image-validation'),
+    checkImageLinks: args.includes('--check-image-links'),
     command,
     outputDir,
   };
@@ -43,9 +45,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 // 同步文章
-async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promise<void> {
+async function syncPosts(noCache: boolean, skipImageValidation: boolean, checkImageLinks: boolean): Promise<void> {
   const typechoClient = new TypechoClient(typechoDbConfig);
   const notionClient = new NotionClient(notionConfig, skipImageValidation);
+
+  if (checkImageLinks) {
+    console.log('Image link checking is enabled - broken image links will be removed');
+  }
 
   const result: SyncResult = {
     total: 0,
@@ -55,6 +61,10 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promis
     failed: 0,
     errors: [],
   };
+
+  // 图片检查统计
+  let totalImagesChecked = 0;
+  let totalImagesRemoved = 0;
 
   let posts: TypechoPost[] = [];
 
@@ -110,6 +120,7 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promis
       try {
         const existing = existingPosts[post.slug];
 
+        // 先判断是否需要跳过
         if (existing) {
           // 比较 PG 的 modified 和 Notion 的 UpdateDate
           const postModified = new Date(post.modified * 1000).toISOString();
@@ -120,14 +131,23 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promis
             result.skipped++;
             continue;
           }
+        }
 
+        // 只有在需要创建或更新时才清理图片链接
+        const cleanResult = await cleanBrokenImageLinks(post.text, checkImageLinks);
+        const cleanedPost = { ...post, text: cleanResult.content };
+
+        totalImagesChecked += cleanResult.totalChecked;
+        totalImagesRemoved += cleanResult.removedCount;
+
+        if (existing) {
           // PG 的修改时间更新，执行更新
           console.log(`${progress} [UPDATE] "${post.title}" (slug: ${post.slug})`);
-          await notionClient.updatePage(existing.pageId, post);
+          await notionClient.updatePage(existing.pageId, cleanedPost);
           result.updated++;
         } else {
           console.log(`${progress} [CREATE] "${post.title}" (slug: ${post.slug})`);
-          await notionClient.createPage(post);
+          await notionClient.createPage(cleanedPost);
           result.created++;
         }
 
@@ -151,6 +171,14 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promis
 
   // 打印同步统计
   printSummary(result, 'posts');
+
+  // 打印图片检查统计
+  if (checkImageLinks && totalImagesChecked > 0) {
+    console.log();
+    console.log('Image Check Summary:');
+    console.log(`  Total images checked: ${totalImagesChecked}`);
+    console.log(`  Total images removed: ${totalImagesRemoved}`);
+  }
 }
 
 // 同步友链
@@ -241,12 +269,15 @@ async function syncLinks(): Promise<void> {
 }
 
 // 导出到 Markdown
-async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<void> {
+async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outputDir?: string): Promise<void> {
   const typechoClient = new TypechoClient(typechoDbConfig);
   const exportDir = outputDir || markdownExportDir;
   const markdownExporter = new MarkdownExporter(exportDir);
 
   console.log(`Export directory: ${exportDir}`);
+  if (checkImageLinks) {
+    console.log('Image link checking is enabled - broken image links will be removed');
+  }
   console.log();
 
   const result: SyncResult = {
@@ -257,6 +288,10 @@ async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<v
     failed: 0,
     errors: [],
   };
+
+  // 图片检查统计
+  let totalImagesChecked = 0;
+  let totalImagesRemoved = 0;
 
   let posts: TypechoPost[] = [];
 
@@ -301,7 +336,24 @@ async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<v
       const progress = `[${currentIndex}/${posts.length}]`;
 
       try {
+        // 先判断是否需要跳过（不实际写入）
         const { action, filename } = await markdownExporter.exportPost(post);
+
+        if (action === 'skipped') {
+          console.log(`${progress} [SKIP] "${post.title}" -> ${filename} - No update needed`);
+          result.skipped++;
+          continue;
+        }
+
+        // 只有在需要创建或更新时才清理图片链接
+        const cleanResult = await cleanBrokenImageLinks(post.text, checkImageLinks);
+        const cleanedPost = { ...post, text: cleanResult.content };
+
+        totalImagesChecked += cleanResult.totalChecked;
+        totalImagesRemoved += cleanResult.removedCount;
+
+        // 重新导出清理后的文章
+        await markdownExporter.exportPost(cleanedPost);
 
         if (action === 'created') {
           console.log(`${progress} [CREATE] "${post.title}" -> ${filename}`);
@@ -309,9 +361,6 @@ async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<v
         } else if (action === 'updated') {
           console.log(`${progress} [UPDATE] "${post.title}" -> ${filename}`);
           result.updated++;
-        } else {
-          console.log(`${progress} [SKIP] "${post.title}" -> ${filename} - No update needed`);
-          result.skipped++;
         }
       } catch (error) {
         const errorMessage = (error as Error).message;
@@ -332,6 +381,14 @@ async function exportToMarkdown(noCache: boolean, outputDir?: string): Promise<v
 
   // 打印导出统计
   printSummary(result, 'files');
+
+  // 打印图片检查统计
+  if (checkImageLinks && totalImagesChecked > 0) {
+    console.log();
+    console.log('Image Check Summary:');
+    console.log(`  Total images checked: ${totalImagesChecked}`);
+    console.log(`  Total images removed: ${totalImagesRemoved}`);
+  }
 }
 
 // 打印同步统计
@@ -390,9 +447,9 @@ async function main(): Promise<void> {
       console.error('Configuration error:', (error as Error).message);
       process.exit(1);
     }
-    await exportToMarkdown(args.noCache, args.outputDir);
+    await exportToMarkdown(args.noCache, args.checkImageLinks, args.outputDir);
   } else {
-    await syncPosts(args.noCache, args.skipImageValidation);
+    await syncPosts(args.noCache, args.skipImageValidation, args.checkImageLinks);
   }
 }
 
