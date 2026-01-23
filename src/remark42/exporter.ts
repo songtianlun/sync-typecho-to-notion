@@ -62,7 +62,7 @@ export class Remark42Exporter {
     const ipHash = this.hashIp(comment.ip);
 
     // 生成文章 URL (使用 slug)
-    const postUrl = `${this.siteUrl}/${post.slug}.html`;
+    const postUrl = `${this.siteUrl}/archives/${post.slug}`;
 
     // 转换时间为 ISO 8601 格式
     const time = new Date(comment.created * 1000).toISOString();
