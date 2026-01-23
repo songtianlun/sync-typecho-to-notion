@@ -60,7 +60,7 @@ export class Remark42Exporter {
 
     // 生成 URL (根据类型区分：文章使用 /archives/，页面直接使用 slug)
     const postUrl = post.type === 'page'
-      ? `${this.siteUrl}/${post.slug}.html`
+      ? `${this.siteUrl}/${post.slug}`
       : `${this.siteUrl}/archives/${post.slug}`;
 
     // 转换时间为 ISO 8601 格式
